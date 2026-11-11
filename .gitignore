@@ -1,0 +1,26 @@
+# Build output
+build/
+dist/
+src/obj/
+src/bin/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.iobj
+*.ipdb
+*.log
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Editor
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+.vscode/

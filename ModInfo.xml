@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<mod displayName="AutoSave On Event"
+     unique="AutoSaveOnEvent"
+     version="1.3.0"
+     description="Saves your Spore game automatically at meaningful moments instead of on a timer: when you enter or leave a creation editor at any stage, when your creature ranks up, when you ally with or defeat a tribe, when you take a new city, and when you enter or leave an adventure. Saving no longer stops the game with a 'your game has been saved' box - a save icon and a short line fade in at the top right instead, on a soft-edged plate that blends into the picture."
+     installerSystemVersion="1.0.1.3"
+     dllsBuild="2.5.587">
+    <prerequisite>AutoSaveOnEvent.dll</prerequisite>
+</mod>

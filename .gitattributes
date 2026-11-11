@@ -1,0 +1,8 @@
+# Keep every text file LF in the repository and in the working tree, so the
+# checked-out copies match the ones this mod is built and documented with.
+* text=auto eol=lf
+
+# Nothing here is binary, but keep these out of any future diff noise.
+*.png binary
+*.sporemod binary
+*.dll binary
