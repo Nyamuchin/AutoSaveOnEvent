@@ -40,6 +40,9 @@ enum class SaveReason : uint32_t
     CityCaptured    = 1u << 5,
     AdventureEnter  = 1u << 6,
     AdventureExit   = 1u << 7,
+    SpaceAlliance   = 1u << 8,
+    SpaceTrade      = 1u << 9,
+    SpaceWar        = 1u << 10,
 };
 
 inline uint32_t operator|(SaveReason a, SaveReason b) { return uint32_t(a) | uint32_t(b); }
@@ -322,6 +325,9 @@ private:
     bool mSaveOnCityCapture = true;
     bool mSaveOnAdventureEnter = true;
     bool mSaveOnAdventureExit = true;
+    bool mSaveOnSpaceAlliance = true;
+    bool mSaveOnSpaceTrade = true;
+    bool mSaveOnSpaceWar = true;
 
     /// When true the game's blocking "your game has been saved" dialog is
     /// suppressed and a short fading line is drawn at the top right instead.
@@ -339,6 +345,9 @@ private:
     int mLastCityCount = -1;
     int mLastAlliedTribes = -1;
     int mLastDefeatedTribes = -1;
+    int mLastSpaceAllies = -1;
+    int mLastSpaceTrade = -1;
+    int mLastSpaceEnemies = -1;
 
     // Pending deferred save, kept per stage.
     //

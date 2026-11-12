@@ -103,6 +103,162 @@ namespace
         return count;
     }
 
+    /// True when `current` is a new high-water mark for `last`, i.e. the thing
+    /// this counter counts just happened.
+    ///
+    /// `last` is re-baselined in both directions. The space-stage counters this
+    /// is used for can go *down* - an alliance is broken, a war ends, a trade
+    /// route is lost - and a later gain still has to fire, so simply ignoring
+    /// the decrease would leave the baseline stuck at the old peak.
+    bool RoseAboveLast(int current, int& last)
+    {
+        if (last < 0 || current < last)
+        {
+            last = current;  // first sample, or something went away
+            return false;
+        }
+
+        if (current > last)
+        {
+            last = current;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// How many other empires the player is currently allied with (or at war
+    /// with), in the space stage.
+    ///
+    /// Counted through the relationship manager rather than through
+    /// cEmpire::mAllies / mEnemies: DeclareAlliance() and DeclareWar() provably
+    /// write the pair's relationship flags (bit 1 and bit 0 of
+    /// cRelationshipData::mFlags, see IsAllied()/IsAtWar()), while nothing we
+    /// could verify keeps those two vectors in step.
+    int CountSpaceRelations(cStarManager& stars, uint32_t playerPoliticalID, bool allied)
+    {
+        int count = 0;
+
+        for (auto& entry : stars.GetEmpires())
+        {
+            if (!entry.second) { continue; }
+            if (entry.first == playerPoliticalID) { continue; }
+
+            const bool matches = allied
+                ? RelationshipManager.IsAllied(playerPoliticalID, entry.first)
+                : RelationshipManager.IsAtWar(playerPoliticalID, entry.first);
+
+            if (matches)
+            {
+                ++count;
+            }
+        }
+
+        return count;
+    }
+
+    /// How many trade routes involve the player's empire.
+    ///
+    /// Iterated as a typed map (mTradeRoutes is declared as
+    /// eastl::map<int, cTradeRouteData>), so the field offsets come from the
+    /// header rather than from guessing at the container's node layout.
+    int CountSpaceTradeRoutes(cStarManager& stars, uint32_t playerPoliticalID)
+    {
+        int count = 0;
+
+        for (auto& entry : stars.mTradeRouteManager.mTradeRoutes)
+        {
+            const cTradeRouteData& route = entry.second;
+            if (route.mPoliticalID1 == playerPoliticalID || route.mPoliticalID2 == playerPoliticalID)
+            {
+                ++count;
+            }
+        }
+
+        return count;
+    }
+
+    /// How many empires the player has completed a trade agreement with.
+    ///
+    /// This is the diplomacy-dialogue side of trading, which has no message and
+    /// no list of its own; the only trace it leaves is the
+    /// kRelationshipEventSpaceTradeComplete event on the pair's relationship.
+    /// A non-zero value means "has traded at least once", which is what
+    /// "established trade" means here.
+    int CountSpaceTradePartners(cStarManager& stars, uint32_t playerPoliticalID)
+    {
+        int count = 0;
+
+        for (auto& entry : stars.GetEmpires())
+        {
+            if (!entry.second) { continue; }
+            if (entry.first == playerPoliticalID) { continue; }
+
+            const float traded = RelationshipManager.GetRelationshipEventValue(
+                playerPoliticalID, entry.first, kRelationshipEventSpaceTradeComplete);
+
+            if (traded != 0.0f)
+            {
+                ++count;
+            }
+        }
+
+        return count;
+    }
+
+    /// One poll's worth of space-stage signals.
+    struct SpaceSnapshot
+    {
+        int allies = -1;
+        int tradePartners = -1;
+        int enemies = -1;
+
+        /// False when the space-stage data could not be read this time, in
+        /// which case the three counters above are meaningless and must be
+        /// left alone rather than treated as zero.
+        bool valid = false;
+    };
+
+    /// Reads the three space-stage signals. Safe to call in any stage; returns
+    /// an invalid snapshot outside a running space game.
+    SpaceSnapshot SampleSpaceStage()
+    {
+        SpaceSnapshot snapshot;
+
+        // Every accessor below dereferences the space player data, which only
+        // exists while a space game is running.
+        if (!IsSpaceGame())
+        {
+            return snapshot;
+        }
+
+        // Taken explicitly rather than through the StarManager macro: that macro
+        // dereferences Get() unconditionally, and this runs once a second in a
+        // game that has already taught us not to trust pointers it did not
+        // promise.
+        cStarManager* stars = cStarManager::Get();
+        if (stars == nullptr)
+        {
+            return snapshot;
+        }
+
+        auto empire = GetPlayerEmpire();
+        if (empire == nullptr)
+        {
+            return snapshot;
+        }
+
+        const uint32_t playerPoliticalID = empire->GetEmpireID();
+
+        snapshot.allies = CountSpaceRelations(*stars, playerPoliticalID, true);
+        snapshot.enemies = CountSpaceRelations(*stars, playerPoliticalID, false);
+        snapshot.tradePartners = CountSpaceTradeRoutes(*stars, playerPoliticalID)
+            + CountSpaceTradePartners(*stars, playerPoliticalID);
+        snapshot.valid = true;
+
+        return snapshot;
+    }
+
     /// Best-effort description of a save reason bitmask, for the log line.
     const char* DescribeReasons(uint32_t reasons)
     {
@@ -125,6 +281,9 @@ namespace
         if (reasons & uint32_t(SaveReason::CityCaptured))   append("city-captured");
         if (reasons & uint32_t(SaveReason::AdventureEnter)) append("adventure-enter");
         if (reasons & uint32_t(SaveReason::AdventureExit))  append("adventure-exit");
+        if (reasons & uint32_t(SaveReason::SpaceAlliance))  append("space-alliance");
+        if (reasons & uint32_t(SaveReason::SpaceTrade))     append("space-trade");
+        if (reasons & uint32_t(SaveReason::SpaceWar))       append("space-war");
 
         if (buffer[0] == '\0')
         {
@@ -457,6 +616,9 @@ void AutoSaveStrategy::Initialize()
     mSaveOnCityCapture    = Config::GetBool(L"SaveOnCityCapture", true);
     mSaveOnAdventureEnter = Config::GetBool(L"SaveOnAdventureEnter", true);
     mSaveOnAdventureExit  = Config::GetBool(L"SaveOnAdventureExit", true);
+    mSaveOnSpaceAlliance  = Config::GetBool(L"SaveOnSpaceAlliance", true);
+    mSaveOnSpaceTrade     = Config::GetBool(L"SaveOnSpaceTrade", true);
+    mSaveOnSpaceWar       = Config::GetBool(L"SaveOnSpaceWar", true);
 
     mShowSaveNotification = Config::GetBool(L"ShowSaveNotification", true);
 
@@ -1518,5 +1680,60 @@ void AutoSaveStrategy::PollProgressEvents()
     {
         mLastAlliedTribes = -1;
         mLastDefeatedTribes = -1;
+    }
+
+    // ---- space stage: a new ally, a new trade partner, or a new war -------
+    //
+    // All three are polled rather than listened for. Alliances do send
+    // kMsgPlayerEmpireAllied, but DeclareWar() sends nothing at all - verified
+    // by disassembly, it only writes the relationship flags - so a single poll
+    // is what covers the set consistently.
+    if (mode == kGameSpace)
+    {
+        const SpaceSnapshot space = SampleSpaceStage();
+
+        // Nothing readable this poll: keep the baselines so a transient failure
+        // does not turn into a burst of saves once the data comes back.
+        if (space.valid)
+        {
+            if (RoseAboveLast(space.allies, mLastSpaceAllies))
+            {
+                MOD_LOG("Player is now allied with %d empire(s).", space.allies);
+
+                if (mSaveOnSpaceAlliance)
+                {
+                    RequestSaveDeferred(uint32_t(SaveReason::SpaceAlliance), mode,
+                        mEditorExitDelaySeconds);
+                }
+            }
+
+            if (RoseAboveLast(space.tradePartners, mLastSpaceTrade))
+            {
+                MOD_LOG("Player now trades with %d empire(s).", space.tradePartners);
+
+                if (mSaveOnSpaceTrade)
+                {
+                    RequestSaveDeferred(uint32_t(SaveReason::SpaceTrade), mode,
+                        mEditorExitDelaySeconds);
+                }
+            }
+
+            if (RoseAboveLast(space.enemies, mLastSpaceEnemies))
+            {
+                MOD_LOG("Player is now at war with %d empire(s).", space.enemies);
+
+                if (mSaveOnSpaceWar)
+                {
+                    RequestSaveDeferred(uint32_t(SaveReason::SpaceWar), mode,
+                        mEditorExitDelaySeconds);
+                }
+            }
+        }
+    }
+    else
+    {
+        mLastSpaceAllies = -1;
+        mLastSpaceTrade = -1;
+        mLastSpaceEnemies = -1;
     }
 }

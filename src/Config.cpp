@@ -73,6 +73,12 @@ namespace
         { L"SaveOnAdventureEnter", L"1" },
         { L"SaveOnAdventureExit", L"1" },
 
+        // Space stage. Alliances and wars are relation flags on the empire pair;
+        // trade is either a trade route or a completed trade agreement.
+        { L"SaveOnSpaceAlliance", L"1" },
+        { L"SaveOnSpaceTrade", L"1" },
+        { L"SaveOnSpaceWar", L"1" },
+
         // How the automatic save reports itself. The game normally pops up a
         // modal "your game has been saved" box that has to be clicked away;
         // 1 replaces it with a short fading line in the top right corner,

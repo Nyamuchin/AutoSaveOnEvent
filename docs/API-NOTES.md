@@ -267,6 +267,64 @@ None of them can say "game saved".
   adventure playback and the adventure editor, so differentiate with
   `App::cScenarioMode::Mode` (`UnkMode=0, EditMode=1, PlayMode=2`) via
   `App::cScenarioMode::Get()->GetMode()`.
+- **Space stage relations**: see the section below.
+
+## Space-stage relations — alliance, trade, war
+
+All three are polled once per second; none of them is a message.
+
+**Where the truth lives.** `cRelationshipManager::mRelationships` is
+`eastl::map<eastl::pair<uint32_t, uint32_t>, cRelationshipData>`, keyed by the two
+political ids, and `cRelationshipData` is
+`{ /*00h*/ float mValue; /*04h*/ int mFlags; /*08h*/ eastl::map<uint32_t, float> mRelationshipEvents; }`.
+`mFlags` bit 0 = at war, bit 1 = allied — established by disassembly of the
+accessors rather than by the header comment, which only guesses:
+
+```
+IsAtWar   (RVA 0x9014C0): ... mov al, byte ptr [eax+4] ; and al, 1
+IsAllied  (RVA 0x901560): ... mov eax,[eax+4] ; shr eax,1 ; and al,1
+```
+
+Both are `__thiscall` / `ret 8`, and both begin with `call 0x1022380`
+(`Simulator::GetPlayerEmpire()`) to substitute the player for a null argument.
+
+**Why polling, not the message.** `DeclareAlliance` (`RVA 0x905BC0`) really does
+send `kMsgPlayerEmpireAllied` (`0x4445D43`) — but only when one side is the player
+(`0x905C44 cmp esi,[esp+0x10]` / `jne`). **`DeclareWar` (`RVA 0x905840`) sends
+nothing at all**: it writes the flag (`or dword ptr [eax+4], 1`, and
+`and dword ptr [eax+4], 0xfffffffd` for the peace direction) and then calls
+`ApplyRelationship` with `kRelationshipEventSpaceStartedWar` (`0x5F8A1AD`). There
+is no war message anywhere in `SimulatorMessages.h`. So the set is polled
+uniformly.
+
+**Trade has two independent shapes**, and both count:
+
+- a **trade route**: `cStarManager::/* 1E0h */ mTradeRouteManager`, i.e.
+  `cSpaceTradeRouteManager { virtual dtor / Write / Read; bool HasTradeRoute(StarID, uint32_t); /*04h*/ eastl::map<int, cTradeRouteData> mTradeRoutes; /*20h*/ int field_20; }`,
+  where `cTradeRouteData` carries `mPoliticalID1` (04h), `mPoliticalID2` (08h) and
+  the two `StarID`s. Iterate the map as a typed `map<int, cTradeRouteData>` — do
+  **not** walk the node layout by hand. `HasTradeRoute`'s own disassembly compares
+  `[eax+0x24]`/`[eax+0x28]` for the empire ids and `[eax+0x1c]`/`[eax+0x20]` for the
+  stars, which are *map node* offsets, roughly 0x1c past the `cTradeRouteData` the
+  header declares.
+- a **completed trade agreement**: no list, no message. The only trace is the
+  `kRelationshipEventSpaceTradeComplete` (`0x0526E527`) entry in the pair's
+  `mRelationshipEvents`, readable through
+  `GetRelationshipEventValue(id1, id2, relationshipID)`
+  (`SelectAddress(0xD010F0, 0xD01BC0)`).
+
+**Reading the empires.** `cStarManager::GetEmpires()` returns
+`EmpiresMap& = eastl::map<uint32_t, cEmpirePtr>&`; `cEmpire::GetEmpireID()` is an
+inline returning `mPoliticalID` (84h), so it is not in `Addresses(cEmpire)`. Take
+`cStarManager::Get()` explicitly and null-check it rather than using the
+`StarManager` macro, which dereferences unconditionally: this runs once a second
+in a game that has a habit of returning null from things the SDK calls safe.
+
+**Counting rule.** The three counters save on an *increase* and re-baseline on a
+decrease — alliances break, wars end, routes are lost, and allying with the same
+empire a second time still has to fire. A first sample only records a baseline,
+the same as the other milestone trackers.
+
 
 ## Object enumeration — `Spore\Simulator\SubSystem\GameNounManager.h`
 

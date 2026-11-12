@@ -18,7 +18,7 @@ the game can serialise.
 | **Creature** | opening and closing the creature editor; reaching a new brain level |
 | **Tribe** | opening and closing the tribe outfitter; allying with another tribe; wiping one out |
 | **Civilization** | opening and closing the editor; taking another city |
-| **Space** | opening and closing the captain outfitter; entering and leaving an adventure |
+| **Space** | opening and closing the captain outfitter; entering and leaving an adventure; allying with an empire; opening trade with an empire; going to war with an empire |
 
 Entering and leaving an editor is deliberately **one** save, not two. The game
 cannot save while an editor is up, so the "entered" event is held and folded
@@ -37,7 +37,7 @@ To remove the mod, uninstall it in the Launcher Kit and delete
 `%APPDATA%\SPORE\Preferences\AutoSaveOnEvent.ini` if you want the settings gone
 too.
 
-What changed in this version: [docs/RELEASE-NOTES-1.3.0.md](docs/RELEASE-NOTES-1.3.0.md).
+What changed in this version: [docs/RELEASE-NOTES-1.4.0.md](docs/RELEASE-NOTES-1.4.0.md).
 
 ## What you see when it saves
 
@@ -116,6 +116,9 @@ SaveOnTribeDefeat=1
 SaveOnCityCapture=1
 SaveOnAdventureEnter=1
 SaveOnAdventureExit=1
+SaveOnSpaceAlliance=1
+SaveOnSpaceTrade=1
+SaveOnSpaceWar=1
 
 ; 1: draw the fading line instead of the game's "saved" box.
 ; 0: suppress the box and show nothing at all.
@@ -189,6 +192,7 @@ What the less obvious lines mean:
 | `Save (...) postponed: game is busy loading \| stage transition in progress \| stage is still settling (retry n/10).` | Normal, and the retry will run. |
 | `Skipping save (...): stage ... is disabled or not a saveable stage.` | Either you switched that stage off, or the event happened in a mode that cannot be saved. |
 | `Skipping save (...): the world is not in a saveable state.` | The retry budget ran out; the event is dropped. |
+| `Player is now allied with n empire(s).` / `Player now trades with n empire(s).` / `Player is now at war with n empire(s).` | A space-stage relation changed. Each is followed by a save unless you switched that event off. |
 | `Throttled (...): waiting n s before saving.` | Only possible with `MinimumSecondsBetweenSaves` raised above 0. |
 | `Save dialog result raised <code>; falling back to the raw latch.` | The game's replay path threw; a fallback restores the latch directly. Saves still work. |
 | `Save latch not restored: this executable does not match the layout (...)` | The game build is not one the fallback knows. Saves after the first may be refused — please report it. |
@@ -225,9 +229,11 @@ verified against the SDK and against the shipping executable — are in
   `Editors::cEditor::OnEnter` / `OnExit` are detoured directly and are the single
   source of truth; the mode is only a fallback if a detour fails to attach.
 - **Milestones are polled and diffed.** Brain level, city count, tribe
-  alliances/defeats and adventure play state are not broadcast as messages, so
-  the mod samples the same state the UI reads, once per second, and saves on
-  change.
+  alliances/defeats, adventure play state and the space-stage relations are not
+  broadcast as messages, so the mod samples the same state the UI reads, once per
+  second, and saves on change. Wars are the clearest case: the game's own
+  `DeclareWar` sends no message at all — verified by disassembly, it only writes
+  the pair's relationship flags — so polling is the only way to see one.
 - **The save itself is the game's.** The mod calls the routine behind the game's
   save button, after checking that the world is in a state where that call is
   safe. There is no private save path to get wrong.
